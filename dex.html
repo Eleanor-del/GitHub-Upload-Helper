@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src https://api.github.com https://uploads.github.com;">
+  <title>GitHub上传助手</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>GitHub 上传助手</h1>
+    <p class="subtitle">图形化一键上传文件 / 发布新版本 · 无需命令行</p>
+  </header>
+
+  <!-- ========== 连接登录页 ========== -->
+  <section id="connectPanel" class="panel">
+    <h2>🔗 连接到 GitHub</h2>
+    <div class="field">
+      <label>个人访问令牌 (Personal Access Token)</label>
+      <div class="token-row">
+        <input type="password" id="token" placeholder="ghp_... 或 github_pat_..." autocomplete="off">
+        <button id="toggleToken" class="btn small" type="button">显示</button>
+      </div>
+      <p class="hint">获取方式：GitHub → 头像 → Settings → Developer settings → Personal access tokens → Generate new token，勾选 <code>repo</code> 权限。令牌仅保存在本机。</p>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>GitHub 用户名</label>
+        <input type="text" id="username" placeholder="你的GitHub用户名">
+      </div>
+      <div class="field">
+        <label>仓库名</label>
+        <input type="text" id="repo" placeholder="my-tool">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>分支 (默认 main)</label>
+        <input type="text" id="branch" value="main">
+      </div>
+      <div class="field">
+        <label>默认目标目录 (留空=仓库根目录)</label>
+        <input type="text" id="targetDir" placeholder="如 src/">
+      </div>
+    </div>
+    <div class="field">
+      <label class="inline-check"><input type="checkbox" id="rememberToken"> 记住令牌（下次打开自动登录，无需重新输入）</label>
+    </div>
+    <div class="actions">
+      <button id="testConn" class="btn primary" type="button">🔗 测试连接</button>
+    </div>
+    <div id="connStatus" class="status"></div>
+    <button id="enterApp" class="btn primary hidden" type="button">进入功能界面 →</button>
+  </section>
+
+  <!-- ========== 仓库创建面板（仓库不存在时出现） ========== -->
+  <section id="createRepoPanel" class="panel hidden">
+    <h2>📦 在 GitHub 上新建仓库</h2>
+    <p class="hint" style="margin-bottom:14px">检测到你的账户下还没有这个仓库。可以直接在下方创建，无需打开网页。</p>
+    <div class="field-row">
+      <div class="field">
+        <label>新仓库名</label>
+        <input type="text" id="newRepoName" placeholder="如 News">
+      </div>
+      <div class="field">
+        <label>描述（选填）</label>
+        <input type="text" id="newRepoDesc" placeholder="这个仓库做什么用">
+      </div>
+    </div>
+    <div class="field">
+      <label class="inline-check"><input type="radio" name="repoVis" id="repoPublic" checked> 公开（Public，任何人可见）</label>
+      <label class="inline-check"><input type="radio" name="repoVis" id="repoPrivate"> 私有（Private，仅自己可见）</label>
+    </div>
+    <div class="field">
+      <label class="inline-check"><input type="checkbox" id="repoInit" checked> 自动初始化 README（推荐：这样仓库不为空，后续才能正常发布 Release）</label>
+    </div>
+    <div class="actions">
+      <button id="doCreateRepo" class="btn primary" type="button">🚀 创建仓库并继续</button>
+      <button id="backConnect" class="btn" type="button">← 返回重新填写</button>
+    </div>
+    <div id="createRepoStatus" class="status"></div>
+  </section>
+
+  <!-- ========== 功能界面 ========== -->
+  <div id="appPanel" class="hidden">
+    <div class="app-bar">
+      <span class="conn-info">✅ 已连接仓库：<b id="connRepo">-</b></span>
+      <button id="logout" class="btn small" type="button">断开 / 切换仓库</button>
+    </div>
+
+    <div class="tabs">
+      <button id="tabUpload" class="tab active" type="button">📁 上传文件</button>
+      <button id="tabRelease" class="tab" type="button">📦 发布 Release 新版本</button>
+    </div>
+
+    <div id="uploadMode">
+      <div class="steps">
+        <div class="step active" data-step="1"><span class="num">1</span>选择文件</div>
+        <div class="step-line"></div>
+        <div class="step" data-step="2"><span class="num">2</span>上传同步</div>
+      </div>
+
+      <!-- 选文件 -->
+      <section id="step1" class="panel">
+        <h2>选择要上传的文件</h2>
+        <div class="pick-actions">
+          <button id="pickFolder" class="btn primary" type="button">📁 选择整个文件夹</button>
+          <button id="pickFiles" class="btn" type="button">📄 选择多个文件</button>
+          <button id="clearFiles" class="btn" type="button">清空</button>
+        </div>
+        <div class="file-list-wrap">
+          <table class="file-list">
+            <thead><tr><th>文件名</th><th>大小</th><th>目标路径</th><th></th></tr></thead>
+            <tbody id="fileList"></tbody>
+          </table>
+          <div id="emptyHint" class="empty-hint">尚未选择文件。请选择整个文件夹（保留目录结构）或单个文件。</div>
+        </div>
+        <div class="actions">
+          <button id="toUpload" class="btn primary" type="button" disabled>下一步：上传同步 →</button>
+        </div>
+      </section>
+
+      <!-- 上传 -->
+      <section id="step2" class="panel hidden">
+        <h2>上传同步到 GitHub</h2>
+        <div id="uploadSummary" class="summary"></div>
+        <div class="progress-wrap">
+          <div class="progress-bar" id="progressBar"><span id="progressText">0%</span></div>
+        </div>
+        <div id="uploadLog" class="upload-log"></div>
+        <div class="actions">
+          <button id="startUpload" class="btn primary" type="button">🚀 开始上传</button>
+          <button id="backToPick" class="btn" type="button">← 返回选择</button>
+        </div>
+        <div id="doneBox" class="done-box hidden"></div>
+      </section>
+    </div>
+
+    <!-- Release -->
+    <section id="releasePanel" class="panel hidden">
+      <h2>📦 发布 Release 新版本</h2>
+      <p class="hint" style="margin-bottom:14px">在 GitHub 上发布一个版本，并上传你的安装包（如 Setup.exe）作为下载附件。版本号 tag 需每次更新，不能重复。</p>
+      <div class="field-row">
+        <div class="field">
+          <label>版本号 Tag（必填，如 v1.0.0）</label>
+          <input type="text" id="relTag" placeholder="v1.0.0">
+        </div>
+        <div class="field">
+          <label>Release 标题（选填，默认=版本号）</label>
+          <input type="text" id="relName" placeholder="V1.0.0 正式版">
+        </div>
+      </div>
+      <div class="field">
+        <label>版本说明（选填）</label>
+        <textarea id="relBody" rows="4" placeholder="本次更新内容：&#10;- 新增功能&#10;- 修复问题"></textarea>
+      </div>
+      <div class="field">
+        <label>要上传的安装包附件</label>
+        <div class="token-row">
+          <input type="text" id="relAsset" readonly placeholder="请选择要作为附件的安装包文件（如 Setup.exe）">
+          <button id="pickAsset" class="btn small" type="button">选择文件</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="inline-check"><input type="checkbox" id="relDraft"> 保存为草稿（不公开）</label>
+        <label class="inline-check"><input type="checkbox" id="relPre"> 预发布（Prerelease）</label>
+      </div>
+      <div class="actions">
+        <button id="createRelease" class="btn primary" type="button">🚀 创建 Release 并上传附件</button>
+      </div>
+      <div id="relStatus" class="status"></div>
+      <div id="relLog" class="upload-log"></div>
+      <div id="relDone" class="done-box hidden"></div>
+    </section>
+  </div>
+
+  <footer>GitHub 上传助手 · 数据仅通过 GitHub 官方 API 传输</footer>
+  <script src="renderer.js"></script>
+</body>
+</html>
